@@ -25,7 +25,6 @@
           rust-analyzer
           clippy
           cmake
-          rust-docs
         ];
         shellHook = ''
           export RUST_LOG=debug

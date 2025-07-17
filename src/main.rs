@@ -1,11 +1,63 @@
-use std::io::{BufReader, Cursor, Read};
+pub struct Scanner<'s> {
+    src: &'s str,
+    iter: std::iter::Peekable<std::str::CharIndices<'s>>,
+    tokens: Vec<Token<'s>>,
+    line: usize,
+}
 
-pub struct Scanner {}
+impl<'s> Scanner<'s> {
+    pub fn new(src: &'s str) -> Self {
+        Self {
+            src,
+            iter: src.char_indices().peekable(),
+            tokens: Vec::new(),
+            line: 0,
+        }
+    }
+    pub fn scan(&mut self) {
+        while let Some(_) = self.iter.peek() {
+            self.scan_token();
+        }
+    }
+    pub fn scan_token(&mut self) {
+        let (start, c) = self.iter.next().unwrap();
+        match c {
+            '(' => self.add_token(Token::LeftParen {
+                line: self.line,
+                lexeme: "henk",
+            }),
+            ')' => self.add_token(Token::RightParen { line: self.line }),
+            '!' => {
+                if let Some((current, _)) = self.match_next_token('=') {
+                    self.add_token(Token::BangEqual {
+                        line: self.line,
+                        lexeme: &self.src[start..current + 1],
+                    });
+                } else {
+                    self.add_token(Token::Bang { line: self.line });
+                }
+            }
+            '/' => {
+                if let Some(_) = self.match_next_token('/') {
+                    while let Some((_, c)) = self.iter.next()
+                        && c != '\n'
+                    {}
+                    self.line += 1;
+                } else {
+                    self.add_token(Token::Slash);
+                }
+            }
+            '\n' => self.line += 1,
+            _ => (),
+        }
+    }
 
-impl Scanner {
-    pub fn scan<R: Read>(&self, mut reader: R) -> std::io::Result<Vec<Token>> {
-        let tokens = Vec::new();
-        Ok(tokens)
+    pub fn add_token(&mut self, token: Token<'s>) {
+        self.tokens.push(token);
+    }
+
+    pub fn match_next_token(&mut self, expected: char) -> Option<(usize, char)> {
+        self.iter.next_if(|(_, c)| *c == expected)
     }
 }
 
@@ -13,54 +65,50 @@ pub fn error(line: usize, message: &str) {
     println!("[line {}]: {}", line, message);
 }
 
-#[derive(Debug)]
-pub struct TokenLoc {
-    line: usize,
-    start: usize,
-    len: usize,
-}
+#[derive(Debug, PartialEq)]
+pub enum Token<'s> {
+    // Single
+    LeftParen { line: usize, lexeme: &'s str },
+    RightParen { line: usize },
+    LeftBrace,
+    RightBrace,
+    Comma,
+    Dot,
+    Minus,
+    Plus,
+    SemiColon,
+    Slash,
+    Star,
 
-impl TokenLoc {
-    pub fn new(line: usize, start: usize, len: usize) -> Self {
-        Self { line, start, len }
-    }
-}
+    // Single/Double
+    Bang { line: usize },
+    BangEqual { line: usize, lexeme: &'s str },
+    Equal,
+    EqualEqual,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
 
-#[derive(Debug)]
-pub enum Token {
-    LeftParen(TokenLoc),
-    RightParen(TokenLoc),
-    LeftBrace(TokenLoc),
-    RightBrace(TokenLoc),
-    Comma(TokenLoc),
-    Dot(TokenLoc),
-    Minus(TokenLoc),
-    Plus(TokenLoc),
-    SemiColon(TokenLoc),
-    Slash(TokenLoc),
-    Star(TokenLoc),
-    Equal(TokenLoc),
-    EqualEqual(TokenLoc),
-    Greater(TokenLoc),
-    GreaterEqual(TokenLoc),
-    Less(TokenLoc),
-    LessEqual(TokenLoc),
-    Identifier(TokenLoc),
-    String(TokenLoc),
-    Number(TokenLoc),
-    And(TokenLoc),
-    Struct(TokenLoc),
-    If(TokenLoc),
-    Else(TokenLoc),
-    True(TokenLoc),
-    False(TokenLoc),
-    Function(TokenLoc),
-    For(TokenLoc),
-    Print(TokenLoc),
-    Return(TokenLoc),
-    Let(TokenLoc),
-    While(TokenLoc),
-    EOF(TokenLoc),
+    // Literals
+    Identifier,
+    String,
+    Number,
+
+    // Keywords
+    And,
+    Or,
+    If,
+    Else,
+    True,
+    False,
+    Function,
+    For,
+    Print,
+    Return,
+    Let,
+    While,
+    Eof,
 }
 
 fn main() {}
@@ -78,12 +126,15 @@ mod tests {
     #[test]
     fn simple_scanner_test() {
         let src = r#"
-    let x = 5;
-    let name = "henk";
+            (
+                😂 // hello this is a comment
+                ! // hello this is another comment
+                !=
+                /
+            )
         "#;
-        let scanner = Scanner {};
-        let reader = Cursor::new(src.as_bytes());
-        let tokens = scanner.scan(reader).expect("tokenization failed");
-        print_tokens(tokens.as_slice());
+        let mut scanner = Scanner::new(&src);
+        scanner.scan();
+        print_tokens(scanner.tokens.as_slice());
     }
 }
