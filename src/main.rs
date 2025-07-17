@@ -3,6 +3,7 @@ pub struct Scanner<'s> {
     iter: std::iter::Peekable<std::str::CharIndices<'s>>,
     tokens: Vec<Token<'s>>,
     line: usize,
+    current: usize,
 }
 
 impl<'s> Scanner<'s> {
@@ -12,6 +13,7 @@ impl<'s> Scanner<'s> {
             iter: src.char_indices().peekable(),
             tokens: Vec::new(),
             line: 0,
+            current: 0,
         }
     }
     pub fn scan(&mut self) {
@@ -22,20 +24,31 @@ impl<'s> Scanner<'s> {
     pub fn scan_token(&mut self) {
         let (start, c) = self.iter.next().unwrap();
         match c {
-            '(' => self.add_token(Token::LeftParen {
-                line: self.line,
-                lexeme: "henk",
-            }),
+            '(' => self.add_token(Token::LeftParen { line: self.line }),
             ')' => self.add_token(Token::RightParen { line: self.line }),
             '!' => {
                 if let Some((current, _)) = self.match_next_token('=') {
-                    self.add_token(Token::BangEqual {
-                        line: self.line,
-                        lexeme: &self.src[start..current + 1],
-                    });
+                    self.current = current;
+                    self.add_token(Token::BangEqual { line: self.line });
                 } else {
                     self.add_token(Token::Bang { line: self.line });
                 }
+            }
+            '"' => {
+                while let Some((current, c)) = self.iter.next() {
+                    self.current = current;
+                    if c == '\n' {
+                        self.line += 1;
+                    }
+                    if c == '"' {
+                        break;
+                    }
+                }
+                self.add_token(Token::String {
+                    line: self.line,
+                    // do not include the double quotes themselves so schrink by 1 on both sides
+                    lexeme: &self.src[start + 1..self.current],
+                });
             }
             '/' => {
                 if let Some(_) = self.match_next_token('/') {
@@ -47,6 +60,9 @@ impl<'s> Scanner<'s> {
                     self.add_token(Token::Slash);
                 }
             }
+            ' ' => (),
+            '\r' => (),
+            '\t' => (),
             '\n' => self.line += 1,
             _ => (),
         }
@@ -68,7 +84,7 @@ pub fn error(line: usize, message: &str) {
 #[derive(Debug, PartialEq)]
 pub enum Token<'s> {
     // Single
-    LeftParen { line: usize, lexeme: &'s str },
+    LeftParen { line: usize },
     RightParen { line: usize },
     LeftBrace,
     RightBrace,
@@ -82,7 +98,7 @@ pub enum Token<'s> {
 
     // Single/Double
     Bang { line: usize },
-    BangEqual { line: usize, lexeme: &'s str },
+    BangEqual { line: usize },
     Equal,
     EqualEqual,
     Greater,
@@ -92,7 +108,7 @@ pub enum Token<'s> {
 
     // Literals
     Identifier,
-    String,
+    String { line: usize, lexeme: &'s str },
     Number,
 
     // Keywords
@@ -127,10 +143,13 @@ mod tests {
     fn simple_scanner_test() {
         let src = r#"
             (
+"test"
                 😂 // hello this is a comment
                 ! // hello this is another comment
                 !=
                 /
+                " multi-line text is 
+                also ok"
             )
         "#;
         let mut scanner = Scanner::new(&src);
