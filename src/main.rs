@@ -16,21 +16,8 @@ impl Scanner {
                 '\r' => (),
                 '\t' => (),
                 '\n' => line += 1,
-                '/' => {
-                    let next_token = iter.peek();
-                    if Self::next_token_is(next_token, '/') {
-                        while let Some((_, c)) = iter.next()
-                            && c != '\n'
-                        {}
-                        line += 1;
-                        ()
-                    } else {
-                        let token = Self::scan_token(src, iter.clone(), &mut line, index, c)?;
-                        tokens.push(token);
-                    }
-                }
                 _ => {
-                    let token = Self::scan_token(src, iter.clone(), &mut line, index, c)?;
+                    let token = Self::scan_token(src, &mut iter, &mut line, index, c)?;
                     tokens.push(token);
                 }
             }
@@ -40,7 +27,7 @@ impl Scanner {
 
     pub fn scan_token<'s>(
         src: &'s str,
-        mut iter: std::iter::Peekable<std::str::CharIndices<'s>>,
+        iter: &mut std::iter::Peekable<std::str::CharIndices<'s>>,
         line: &mut usize,
         start: usize,
         c: char,
@@ -49,8 +36,8 @@ impl Scanner {
             '(' => Ok(Token::LeftParen { line: *line }),
             ')' => Ok(Token::RightParen { line: *line }),
             '!' => {
-                let next_token = iter.peek();
-                if Self::next_token_is(next_token, '=') {
+                let next_char = iter.peek();
+                if Self::next_char_is(next_char, '=') {
                     iter.next();
                     Ok(Token::BangEqual { line: *line })
                 } else {
@@ -66,19 +53,39 @@ impl Scanner {
                         return Ok(Token::String {
                             line: *line,
                             // do not include the double quotes themselves so schrink by 1 on both sides
-                            lexeme: &src[start + 1..current],
+                            lexeme: &src[start..current + 1],
                         });
                     }
                 }
                 Err(TokenizationError::NoStringDelimiterFound)
             }
-            '/' => Ok(Token::Slash),
+            '/' => {
+                let next_char = iter.peek();
+                if Self::next_char_is(next_char, '/') {
+                    let line_comment = *line;
+                    while let Some((index, c)) = iter.next() {
+                        if c == '\n' {
+                            *line += 1;
+                            return Ok(Token::Comment {
+                                line: line_comment,
+                                lexeme: &src[start..index + 1],
+                            });
+                        }
+                    }
+                    return Ok(Token::Comment {
+                        line: line_comment,
+                        lexeme: &src[start..],
+                    });
+                } else {
+                    Ok(Token::Slash)
+                }
+            }
             _ => Err(TokenizationError::UnrecognizedToken),
         }
     }
 
-    pub fn next_token_is(token: Option<&(usize, char)>, expected: char) -> bool {
-        if let Some((_, c)) = token {
+    pub fn next_char_is(c: Option<&(usize, char)>, expected: char) -> bool {
+        if let Some((_, c)) = c {
             return *c == expected;
         } else {
             return false;
@@ -133,7 +140,10 @@ pub enum Token<'s> {
     Return,
     Let,
     While,
+
+    // No tokens
     Eof,
+    Comment { line: usize, lexeme: &'s str },
 }
 
 fn main() {}
@@ -160,7 +170,7 @@ mod tests {
                 " multi-line text is 
                 also ok"
             )
-        "#;
+        //this is the last comment of the file"#;
         let tokens = Scanner::scan(&src)?;
         print_tokens(tokens.as_slice());
         Ok(())
