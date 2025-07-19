@@ -1,79 +1,88 @@
-pub struct Scanner<'s> {
-    src: &'s str,
-    iter: std::iter::Peekable<std::str::CharIndices<'s>>,
-    tokens: Vec<Token<'s>>,
-    line: usize,
-    current: usize,
+#[derive(Debug)]
+pub enum TokenizationError {
+    NoStringDelimiterFound,
+    UnrecognizedToken,
 }
+pub struct Scanner {}
 
-impl<'s> Scanner<'s> {
-    pub fn new(src: &'s str) -> Self {
-        Self {
-            src,
-            iter: src.char_indices().peekable(),
-            tokens: Vec::new(),
-            line: 0,
-            current: 0,
+impl Scanner {
+    pub fn scan<'s>(src: &'s str) -> Result<Vec<Token<'s>>, TokenizationError> {
+        let mut line = 0;
+        let mut iter = src.char_indices().peekable();
+        let mut tokens = Vec::new();
+        while let Some((index, c)) = iter.next() {
+            match c {
+                ' ' => (),
+                '\r' => (),
+                '\t' => (),
+                '\n' => line += 1,
+                '/' => {
+                    let next_token = iter.peek();
+                    if Self::next_token_is(next_token, '/') {
+                        while let Some((_, c)) = iter.next()
+                            && c != '\n'
+                        {}
+                        line += 1;
+                        ()
+                    } else {
+                        let token = Self::scan_token(src, iter.clone(), &mut line, index, c)?;
+                        tokens.push(token);
+                    }
+                }
+                _ => {
+                    let token = Self::scan_token(src, iter.clone(), &mut line, index, c)?;
+                    tokens.push(token);
+                }
+            }
         }
+        return Ok(tokens);
     }
-    pub fn scan(&mut self) {
-        while let Some(_) = self.iter.peek() {
-            self.scan_token();
-        }
-    }
-    pub fn scan_token(&mut self) {
-        let (start, c) = self.iter.next().unwrap();
+
+    pub fn scan_token<'s>(
+        src: &'s str,
+        mut iter: std::iter::Peekable<std::str::CharIndices<'s>>,
+        line: &mut usize,
+        start: usize,
+        c: char,
+    ) -> Result<Token<'s>, TokenizationError> {
         match c {
-            '(' => self.add_token(Token::LeftParen { line: self.line }),
-            ')' => self.add_token(Token::RightParen { line: self.line }),
+            '(' => Ok(Token::LeftParen { line: *line }),
+            ')' => Ok(Token::RightParen { line: *line }),
             '!' => {
-                if let Some((current, _)) = self.match_next_token('=') {
-                    self.current = current;
-                    self.add_token(Token::BangEqual { line: self.line });
+                let next_token = iter.peek();
+                if Self::next_token_is(next_token, '=') {
+                    iter.next();
+                    Ok(Token::BangEqual { line: *line })
                 } else {
-                    self.add_token(Token::Bang { line: self.line });
+                    Ok(Token::Bang { line: *line })
                 }
             }
             '"' => {
-                while let Some((current, c)) = self.iter.next() {
-                    self.current = current;
+                while let Some((current, c)) = iter.next() {
                     if c == '\n' {
-                        self.line += 1;
+                        *line += 1;
                     }
                     if c == '"' {
-                        break;
+                        return Ok(Token::String {
+                            line: *line,
+                            // do not include the double quotes themselves so schrink by 1 on both sides
+                            lexeme: &src[start + 1..current],
+                        });
                     }
                 }
-                self.add_token(Token::String {
-                    line: self.line,
-                    // do not include the double quotes themselves so schrink by 1 on both sides
-                    lexeme: &self.src[start + 1..self.current],
-                });
+                Err(TokenizationError::NoStringDelimiterFound)
             }
-            '/' => {
-                if let Some(_) = self.match_next_token('/') {
-                    while let Some((_, c)) = self.iter.next()
-                        && c != '\n'
-                    {}
-                    self.line += 1;
-                } else {
-                    self.add_token(Token::Slash);
-                }
-            }
-            ' ' => (),
-            '\r' => (),
-            '\t' => (),
-            '\n' => self.line += 1,
-            _ => (),
+            '/' => Ok(Token::Slash),
+            _ => Err(TokenizationError::UnrecognizedToken),
         }
     }
 
-    pub fn add_token(&mut self, token: Token<'s>) {
-        self.tokens.push(token);
-    }
-
-    pub fn match_next_token(&mut self, expected: char) -> Option<(usize, char)> {
-        self.iter.next_if(|(_, c)| *c == expected)
+    pub fn next_token_is(token: Option<&(usize, char)>, expected: char) -> bool {
+        if let Some((_, c)) = token {
+            return *c == expected;
+        } else {
+            return false;
+        }
     }
 }
 
@@ -140,11 +149,11 @@ mod tests {
     }
 
     #[test]
-    fn simple_scanner_test() {
+    fn simple_scanner_test() -> Result<(), TokenizationError> {
         let src = r#"
             (
 "test"
-                😂 // hello this is a comment
+                "😂" // hello this is a comment
                 ! // hello this is another comment
                 !=
                 /
@@ -152,8 +161,8 @@ mod tests {
                 also ok"
             )
         "#;
-        let mut scanner = Scanner::new(&src);
-        scanner.scan();
-        print_tokens(scanner.tokens.as_slice());
+        let tokens = Scanner::scan(&src)?;
+        print_tokens(tokens.as_slice());
+        Ok(())
     }
 }
