@@ -1,3 +1,6 @@
+mod multipeek;
+use crate::multipeek::multipeek;
+
 #[derive(Debug)]
 pub enum TokenizationError {
     NoStringDelimiterFound,
@@ -5,7 +8,7 @@ pub enum TokenizationError {
 }
 pub struct Scanner<'s> {
     src: &'s str,
-    iter: std::iter::Peekable<std::str::CharIndices<'s>>,
+    iter: multipeek::MultiPeek<std::iter::Peekable<std::str::CharIndices<'s>>>,
     line: usize,
 }
 
@@ -13,7 +16,7 @@ impl<'s> Scanner<'s> {
     pub fn new(src: &'s str) -> Self {
         Self {
             src,
-            iter: src.char_indices().peekable(),
+            iter: multipeek(src.char_indices().peekable()),
             line: 0,
         }
     }
@@ -40,9 +43,7 @@ impl<'s> Scanner<'s> {
             '(' => Ok(Token::LeftParen { line: self.line }),
             ')' => Ok(Token::RightParen { line: self.line }),
             '!' => {
-                let next_char = self.iter.peek();
-                if Self::next_char_is(next_char, '=') {
-                    self.iter.next();
+                if let Some(_) = self.next_if_char_is('=') {
                     Ok(Token::BangEqual { line: self.line })
                 } else {
                     Ok(Token::Bang { line: self.line })
@@ -64,8 +65,7 @@ impl<'s> Scanner<'s> {
                 Err(TokenizationError::NoStringDelimiterFound)
             }
             '/' => {
-                let next_char = self.iter.peek();
-                if Self::next_char_is(next_char, '/') {
+                if let Some(_) = self.next_if_char_is('/') {
                     let line_comment = self.line;
                     while let Some((index, c)) = self.iter.next() {
                         if c == '\n' {
@@ -85,31 +85,60 @@ impl<'s> Scanner<'s> {
                 }
             }
             c if Self::is_digit(c) => {
-                while let Some((index, c)) = self.iter.peek() {
-                    if !Self::is_digit(*c) {
-                        return Ok(Token::Number {
-                            line: self.line,
-                            lexeme: &self.src[start..*index],
-                        });
-                    } else {
-                        self.iter.next();
+                let mut last_index = start;
+                while let Some(index) = self.next_if_char_is_f(|c| Self::is_digit(c)) {
+                    last_index = index;
+                }
+                if let Some(index) = self.next_if_char_is('.') {
+                    last_index = index;
+                    while let Some(index) = self.next_if_char_is_f(|c| Self::is_digit(c)) {
+                        last_index = index;
                     }
                 }
                 return Ok(Token::Number {
                     line: self.line,
-                    lexeme: &self.src[start..],
+                    lexeme: &self.src[start..last_index + 1],
                 });
             }
             _ => Err(TokenizationError::UnrecognizedToken),
         }
     }
 
-    pub fn next_char_is(c: Option<&(usize, char)>, expected: char) -> bool {
-        if let Some((_, c)) = c {
-            return *c == expected;
-        } else {
-            return false;
+    pub fn next_if_char_is(&mut self, expected: char) -> Option<usize> {
+        let index = match self.iter.peek() {
+            Some((index, c)) => {
+                if expected == *c {
+                    Some(*index)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if index.is_some() {
+            self.iter.next();
         }
+        index
+    }
+
+    pub fn next_if_char_is_f<F>(&mut self, f: F) -> Option<usize>
+    where
+        F: Fn(char) -> bool,
+    {
+        let index = match self.iter.peek() {
+            Some((index, c)) => {
+                if f(*c) {
+                    Some(*index)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if index.is_some() {
+            self.iter.next();
+        }
+        index
     }
 
     pub fn is_digit(c: char) -> bool {
@@ -192,6 +221,7 @@ mod tests {
                 !=
                 /
                 312455()
+                3234.1245
                 " multi-line text is 
                 also ok"
             )
