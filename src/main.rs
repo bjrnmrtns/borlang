@@ -89,6 +89,7 @@ impl<'s> Scanner<'s> {
                 while let Some(index) = self.next_if_char_is_f(Self::is_digit) {
                     last_index = index;
                 }
+                self.iter.reset_peek();
                 if let Some(index) = self.next_if_char_is('.') {
                     last_index = index;
                     while let Some(index) = self.next_if_char_is_f(Self::is_digit) {

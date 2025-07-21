@@ -64,3 +64,12 @@ where
         self.iter.fold(init, f)
     }
 }
+
+impl<I> MultiPeek<I>
+where
+    I: Iterator,
+{
+    pub fn reset_peek(&mut self) {
+        self.index = 0;
+    }
+}
