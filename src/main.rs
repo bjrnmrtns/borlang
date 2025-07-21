@@ -4,7 +4,7 @@ use crate::multipeek::multipeek;
 #[derive(Debug)]
 pub enum TokenizationError {
     NoStringDelimiterFound,
-    UnrecognizedToken,
+    UnrecognizedToken { line: usize },
 }
 pub struct Scanner<'s> {
     src: &'s str,
@@ -86,12 +86,12 @@ impl<'s> Scanner<'s> {
             }
             c if Self::is_digit(c) => {
                 let mut last_index = start;
-                while let Some(index) = self.next_if_char_is_f(|c| Self::is_digit(c)) {
+                while let Some(index) = self.next_if_char_is_f(Self::is_digit) {
                     last_index = index;
                 }
                 if let Some(index) = self.next_if_char_is('.') {
                     last_index = index;
-                    while let Some(index) = self.next_if_char_is_f(|c| Self::is_digit(c)) {
+                    while let Some(index) = self.next_if_char_is_f(Self::is_digit) {
                         last_index = index;
                     }
                 }
@@ -100,7 +100,7 @@ impl<'s> Scanner<'s> {
                     lexeme: &self.src[start..last_index + 1],
                 });
             }
-            _ => Err(TokenizationError::UnrecognizedToken),
+            _ => Err(TokenizationError::UnrecognizedToken { line: self.line }),
         }
     }
 
@@ -209,6 +209,15 @@ mod tests {
         for token in tokens {
             println!("{:?}", token);
         }
+    }
+
+    #[test]
+    fn number_with_dot_test() -> Result<(), TokenizationError> {
+        let src = r#"3234.1245"#;
+        let mut scanner = Scanner::new(&src);
+        let tokens = scanner.scan()?;
+        print_tokens(tokens.as_slice());
+        Ok(())
     }
 
     #[test]
